@@ -5,9 +5,9 @@ import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { Wordmark } from "@/components/wordmark";
 import { z } from "zod";
 
 export const Route = createFileRoute("/auth")({
@@ -30,7 +30,7 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/app" });
+      if (data.session) navigate({ to: "/today" });
     });
   }, [navigate]);
 
@@ -51,17 +51,17 @@ function AuthPage() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/app`,
+            emailRedirectTo: `${window.location.origin}/today`,
             data: { full_name: fullName },
           },
         });
         if (error) throw error;
         toast.success("Welcome! Check your email to confirm.");
-        navigate({ to: "/app" });
+        navigate({ to: "/today" });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        navigate({ to: "/app" });
+        navigate({ to: "/today" });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
@@ -73,7 +73,7 @@ function AuthPage() {
   async function handleGoogle() {
     setOauthLoading(true);
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin + "/app",
+      redirect_uri: window.location.origin + "/today",
     });
     if (result.error) {
       toast.error("Google sign-in failed");
@@ -81,101 +81,84 @@ function AuthPage() {
       return;
     }
     if (result.redirected) return;
-    navigate({ to: "/app" });
+    navigate({ to: "/today" });
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 bg-gradient-to-b from-secondary via-background to-background">
-      <Link to="/" className="flex items-center gap-2 mb-8 text-foreground">
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
-          <CalendarIcon className="h-5 w-5" />
-        </span>
-        <span className="font-display text-2xl font-semibold">Hearth</span>
-      </Link>
-      <Card className="w-full max-w-md p-7 shadow-lg border-border/70">
-        <div className="mb-6 text-center">
-          <h1 className="font-display text-2xl font-semibold">
-            {mode === "signin" ? "Welcome back" : "Create your account"}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {mode === "signin" ? "Sign in to your shared calendars" : "Start planning together in seconds"}
+    <div className="grid min-h-screen lg:grid-cols-2">
+      {/* Brand panel */}
+      <div className="relative hidden flex-col justify-between bg-primary p-10 text-primary-foreground lg:flex">
+        <Link to="/"><Wordmark size="lg" className="[&_span:last-child]:text-primary-foreground" /></Link>
+        <div>
+          <blockquote className="text-2xl font-semibold leading-snug tracking-tight">
+            &ldquo;The calendar we actually use together.&rdquo;
+          </blockquote>
+          <p className="mt-4 text-sm opacity-70">
+            Plan ahead, count down to what matters, and keep the moments worth remembering.
           </p>
         </div>
+        <p className="text-xs opacity-50">Private · No ads · Your people only</p>
+      </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full h-11"
-          onClick={handleGoogle}
-          disabled={oauthLoading || loading}
-        >
-          {oauthLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-          <span className="ml-2">Continue with Google</span>
-        </Button>
+      {/* Form panel */}
+      <div className="flex flex-col items-center justify-center px-5 py-12">
+        <Link to="/" className="mb-8 lg:hidden"><Wordmark size="lg" /></Link>
 
-        <div className="flex items-center gap-3 my-5">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-xs uppercase tracking-wider text-muted-foreground">or</span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {mode === "signin" ? "Welcome back" : "Create your account"}
+          </h1>
+          <p className="mt-1 text-caption">
+            {mode === "signin"
+              ? "Sign in to your shared space"
+              : "Start planning together in under a minute"}
+          </p>
 
-        <form onSubmit={handleEmail} className="space-y-3">
-          {mode === "signup" && (
-            <div>
-              <Label htmlFor="name">Full name</Label>
-              <Input
-                id="name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Jordan Rivera"
-                autoComplete="name"
-                maxLength={80}
-              />
-            </div>
-          )}
-          <div>
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-              maxLength={255}
-              required
-            />
-          </div>
-          <div>
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              minLength={8}
-              maxLength={72}
-              required
-            />
-          </div>
-          <Button type="submit" className="w-full h-11 mt-2" disabled={loading || oauthLoading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signin" ? "Sign in" : "Create account"}
-          </Button>
-        </form>
-
-        <p className="mt-5 text-center text-sm text-muted-foreground">
-          {mode === "signin" ? "New to Hearth?" : "Already have an account?"}{" "}
-          <button
+          <Button
             type="button"
-            className="text-primary font-medium hover:underline"
-            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+            variant="outline"
+            className="mt-8 w-full h-11"
+            onClick={handleGoogle}
+            disabled={oauthLoading || loading}
           >
-            {mode === "signin" ? "Create one" : "Sign in"}
-          </button>
-        </p>
-      </Card>
+            {oauthLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
+            <span className="ml-2">Continue with Google</span>
+          </Button>
+
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-overline">or</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <form onSubmit={handleEmail} className="space-y-4">
+            {mode === "signup" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="name">Full name</Label>
+                <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jordan Rivera" autoComplete="name" maxLength={80} />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" maxLength={255} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Password</Label>
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={8} maxLength={72} required />
+            </div>
+            <Button type="submit" className="w-full h-11 mt-2" disabled={loading || oauthLoading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signin" ? "Sign in" : "Create account"}
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center text-caption">
+            {mode === "signin" ? "New to Hearth?" : "Already have an account?"}{" "}
+            <button type="button" className="font-medium text-foreground underline-offset-4 hover:underline" onClick={() => setMode(mode === "signin" ? "signup" : "signin")}>
+              {mode === "signin" ? "Create one" : "Sign in"}
+            </button>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

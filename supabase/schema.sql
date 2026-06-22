@@ -28,6 +28,7 @@ CREATE TABLE public.calendars (
   name TEXT NOT NULL,
   color TEXT NOT NULL DEFAULT '#f97316',
   is_personal BOOLEAN NOT NULL DEFAULT false,
+  space_type TEXT NOT NULL DEFAULT 'couple',
   owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -115,7 +116,7 @@ CREATE POLICY "profiles_insert_self" ON public.profiles FOR INSERT TO authentica
 CREATE POLICY "profiles_update_self" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
 
 CREATE POLICY "calendars_select_member" ON public.calendars FOR SELECT TO authenticated
-  USING (public.is_calendar_member(id, auth.uid()));
+  USING (auth.uid() = owner_id OR public.is_calendar_member(id, auth.uid()));
 CREATE POLICY "calendars_insert_own" ON public.calendars FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = owner_id);
 CREATE POLICY "calendars_update_owner" ON public.calendars FOR UPDATE TO authenticated
@@ -147,6 +148,36 @@ CREATE POLICY "events_update_editor" ON public.events FOR UPDATE TO authenticate
   USING (public.calendar_role_of(calendar_id, auth.uid()) IN ('owner', 'editor'));
 CREATE POLICY "events_delete_editor" ON public.events FOR DELETE TO authenticated
   USING (public.calendar_role_of(calendar_id, auth.uid()) IN ('owner', 'editor'));
+
+-- Event attendance (RSVP / going-status)
+CREATE TABLE public.event_attendance (
+  event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'going' CHECK (status IN ('going', 'maybe', 'declined')),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (event_id, user_id)
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.event_attendance TO authenticated;
+GRANT ALL ON public.event_attendance TO service_role;
+ALTER TABLE public.event_attendance ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "attendance_select_member" ON public.event_attendance FOR SELECT TO authenticated
+  USING (EXISTS (
+    SELECT 1 FROM public.events e
+    WHERE e.id = event_id AND public.is_calendar_member(e.calendar_id, auth.uid())
+  ));
+CREATE POLICY "attendance_insert_self" ON public.event_attendance FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.events e
+      WHERE e.id = event_id AND public.is_calendar_member(e.calendar_id, auth.uid())
+    )
+  );
+CREATE POLICY "attendance_update_self" ON public.event_attendance FOR UPDATE TO authenticated
+  USING (user_id = auth.uid());
+CREATE POLICY "attendance_delete_self" ON public.event_attendance FOR DELETE TO authenticated
+  USING (user_id = auth.uid());
 
 CREATE POLICY "invitations_select_owner_or_invited" ON public.invitations FOR SELECT TO authenticated
   USING (
@@ -236,5 +267,35 @@ REVOKE EXECUTE ON FUNCTION public.calendar_role_of(UUID, UUID) FROM PUBLIC, anon
 REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.add_owner_as_member() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.tg_set_updated_at() FROM PUBLIC, anon, authenticated;
+
+-- Onboarding: create the couple's shared space
+CREATE OR REPLACE FUNCTION public.create_shared_space(p_name TEXT, p_color TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  new_id UUID;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF EXISTS (SELECT 1 FROM public.calendars WHERE owner_id = auth.uid() AND NOT is_personal) THEN
+    SELECT id INTO new_id FROM public.calendars
+    WHERE owner_id = auth.uid() AND NOT is_personal
+    ORDER BY created_at DESC LIMIT 1;
+    RETURN new_id;
+  END IF;
+  INSERT INTO public.calendars (name, color, is_personal, owner_id)
+  VALUES (trim(p_name), p_color, false, auth.uid())
+  RETURNING id INTO new_id;
+  INSERT INTO public.calendar_members (calendar_id, user_id, role)
+  VALUES (new_id, auth.uid(), 'owner')
+  ON CONFLICT (calendar_id, user_id) DO NOTHING;
+  UPDATE public.profiles SET color = p_color WHERE id = auth.uid();
+  RETURN new_id;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION public.create_shared_space(TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_shared_space(TEXT, TEXT) TO authenticated;
 
 -- Done. Now copy your Project URL + anon key into the app's .env file.

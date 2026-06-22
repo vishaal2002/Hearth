@@ -54,6 +54,7 @@ export type Database = {
           is_personal: boolean
           name: string
           owner_id: string
+          space_type: string
           updated_at: string
         }
         Insert: {
@@ -63,6 +64,7 @@ export type Database = {
           is_personal?: boolean
           name: string
           owner_id: string
+          space_type?: string
           updated_at?: string
         }
         Update: {
@@ -72,6 +74,7 @@ export type Database = {
           is_personal?: boolean
           name?: string
           owner_id?: string
+          space_type?: string
           updated_at?: string
         }
         Relationships: []
@@ -141,6 +144,35 @@ export type Database = {
           },
         ]
       }
+      event_attendance: {
+        Row: {
+          event_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          event_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          event_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_attendance_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invitations: {
         Row: {
           accepted: boolean
@@ -172,6 +204,65 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "invitations_calendar_id_fkey"
+            columns: ["calendar_id"]
+            isOneToOne: false
+            referencedRelation: "calendars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      moments: {
+        Row: {
+          body: string | null
+          calendar_id: string
+          created_at: string
+          created_by: string
+          happened_on: string
+          id: string
+          kind: Database["public"]["Enums"]["moment_kind"]
+          mood: string | null
+          photo_url: string | null
+          prompt_key: string | null
+          prompt_text: string | null
+          reveal_at: string | null
+          updated_at: string
+          voice_url: string | null
+        }
+        Insert: {
+          body?: string | null
+          calendar_id: string
+          created_at?: string
+          created_by: string
+          happened_on?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["moment_kind"]
+          mood?: string | null
+          photo_url?: string | null
+          prompt_key?: string | null
+          prompt_text?: string | null
+          reveal_at?: string | null
+          updated_at?: string
+          voice_url?: string | null
+        }
+        Update: {
+          body?: string | null
+          calendar_id?: string
+          created_at?: string
+          created_by?: string
+          happened_on?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["moment_kind"]
+          mood?: string | null
+          photo_url?: string | null
+          prompt_key?: string | null
+          prompt_text?: string | null
+          reveal_at?: string | null
+          updated_at?: string
+          voice_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "moments_calendar_id_fkey"
             columns: ["calendar_id"]
             isOneToOne: false
             referencedRelation: "calendars"
@@ -218,6 +309,10 @@ export type Database = {
         Args: { _calendar_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["calendar_role"]
       }
+      create_shared_space: {
+        Args: { p_color: string; p_name: string }
+        Returns: string
+      }
       is_calendar_member: {
         Args: { _calendar_id: string; _user_id: string }
         Returns: boolean
@@ -225,6 +320,7 @@ export type Database = {
     }
     Enums: {
       calendar_role: "owner" | "editor" | "viewer"
+      moment_kind: "reflection" | "note" | "capsule"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -353,6 +449,7 @@ export const Constants = {
   public: {
     Enums: {
       calendar_role: ["owner", "editor", "viewer"],
+      moment_kind: ["reflection", "note", "capsule"],
     },
   },
 } as const

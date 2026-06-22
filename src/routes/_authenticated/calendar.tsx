@@ -6,26 +6,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
-  ChevronLeft, ChevronRight, LogOut, Menu, Plus,
+  ChevronLeft, ChevronRight, Menu, Plus,
   Search, Users, Calendar as CalendarIcon, X, Bell,
 } from "lucide-react";
 import { CalendarView, type EventRow } from "@/components/calendar/calendar-view";
-import { EventDialog, type EventDraft, type DeleteScope } from "@/components/calendar/event-dialog";
+import { EventDialog, type EventDraft, type DeleteScope, type AttendanceStatus } from "@/components/calendar/event-dialog";
 import { MembersDialog } from "@/components/calendar/members-dialog";
+import { EventDetail } from "@/components/calendar/event-detail";
 import { UserAvatar, AvatarStack, type ProfileLike } from "@/components/calendar/user-avatar";
-import { addDays, EVENT_COLORS, expandRecurring, matchesSearch, startOfDay, startOfMonth, startOfWeek } from "@/lib/calendar-utils";
+import { Wordmark } from "@/components/wordmark";
+import { AppFrame, ProfileMenu } from "@/components/app-frame";
+import { addDays, EVENT_COLORS, expandRecurring, matchesSearch, sanitizeSearchTerm, startOfDay, startOfMonth, startOfWeek } from "@/lib/calendar-utils";
 import { useReminders, requestNotificationPermission, notificationsSupported } from "@/lib/use-reminders";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 
-export const Route = createFileRoute("/_authenticated/app")({
+export const Route = createFileRoute("/_authenticated/calendar")({
   head: () => ({ meta: [{ title: "Calendar — Hearth" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    new: typeof search.new === "string" ? search.new : undefined,
+    title: typeof search.title === "string" ? search.title : undefined,
+  }),
   component: AppPage,
 });
 
@@ -34,15 +41,17 @@ type CalendarRow = { id: string; name: string; color: string; owner_id: string; 
 type MemberRow = { id: string; calendar_id: string; user_id: string; role: "owner" | "editor" | "viewer" };
 
 function AppPage() {
-  const navigate = useNavigate();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { user } = Route.useRouteContext();
+  const { new: newIntent, title: seedTitle } = Route.useSearch();
   const [view, setView] = useState<ViewKind>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [search, setSearch] = useState("");
   const [hiddenCals, setHiddenCals] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [eventDialog, setEventDialog] = useState<{ open: boolean; draft: EventDraft } | null>(null);
+  const [selected, setSelected] = useState<EventRow | null>(null);
   const [membersOpen, setMembersOpen] = useState<string | null>(null);
   const [createCalOpen, setCreateCalOpen] = useState(false);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("unsupported");
@@ -94,7 +103,8 @@ function AppPage() {
         .gte("end_at", range.start)
         .lte("start_at", range.end)
         .order("start_at");
-      if (search.trim()) q = q.or(`title.ilike.%${search.trim()}%,description.ilike.%${search.trim()}%,location.ilike.%${search.trim()}%`);
+      const term = sanitizeSearchTerm(search);
+      if (term) q = q.or(`title.ilike.%${term}%,description.ilike.%${term}%,location.ilike.%${term}%`);
       const { data, error } = await q;
       if (error) throw error;
       return data as EventRow[];
@@ -201,22 +211,67 @@ function AppPage() {
     },
   });
 
+  // RSVP / going-status for the events currently in view (keyed by base event id).
+  const eventIds = useMemo(
+    () => Array.from(new Set(displayEvents.map((e) => e.base_id ?? e.id))),
+    [displayEvents],
+  );
+  const attendanceQ = useQuery({
+    queryKey: ["attendance", [...eventIds].sort().join(",")],
+    enabled: eventIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("event_attendance").select("*").in("event_id", eventIds);
+      if (error) throw error;
+      return data as { event_id: string; user_id: string; status: AttendanceStatus }[];
+    },
+  });
+  const attendanceByEvent = useMemo(() => {
+    const m: Record<string, Record<string, AttendanceStatus>> = {};
+    (attendanceQ.data ?? []).forEach((a) => {
+      (m[a.event_id] ??= {})[a.user_id] = a.status;
+    });
+    return m;
+  }, [attendanceQ.data]);
+
+  // Profiles for rendering: event creators + everyone in your calendars (so RSVP avatars resolve).
+  const profilesForView = useMemo(() => {
+    const m = { ...profilesById };
+    (allMembersQ.data ?? []).forEach((p) => { m[p.id] = p; });
+    return m;
+  }, [profilesById, allMembersQ.data]);
+
+  async function setRsvp(eventId: string, status: AttendanceStatus) {
+    const { error } = await supabase
+      .from("event_attendance")
+      .upsert(
+        { event_id: eventId, user_id: user.id, status, updated_at: new Date().toISOString() },
+        { onConflict: "event_id,user_id" },
+      );
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["attendance"] });
+  }
+
   // -------- handlers --------
-  function openNewEvent(at?: Date) {
+  function openNewEvent(at?: Date, opts?: { title?: string; allDay?: boolean }) {
     if (calendars.length === 0) return toast.error("No calendar available");
-    const start = at ?? new Date();
+    const start = at ? new Date(at) : new Date();
     if (!at) start.setMinutes(0, 0, 0);
-    const end = new Date(start); end.setHours(end.getHours() + 1);
+    const end = new Date(start);
+    if (opts?.allDay) {
+      end.setHours(23, 59, 59, 999);
+    } else {
+      end.setHours(end.getHours() + 1);
+    }
     setEventDialog({
       open: true,
       draft: {
         calendar_id: calendars[0].id,
-        title: "",
+        title: opts?.title ?? "",
         description: "",
         location: "",
         start_at: start.toISOString(),
         end_at: end.toISOString(),
-        all_day: false,
+        all_day: opts?.allDay ?? false,
         color: null,
         reminder_minutes: null,
         recurrence: "none",
@@ -226,28 +281,46 @@ function AppPage() {
     });
   }
 
-  function openEditEvent(ev: EventRow) {
-    // For a recurring occurrence, edit the underlying series (the base row).
+  // Deep-link from Today dashboard (?new=today|ahead&title=...)
+  useEffect(() => {
+    if (!newIntent || calendars.length === 0) return;
+    const now = new Date();
+    if (newIntent === "today") {
+      const start = new Date(now);
+      start.setHours(19, 0, 0, 0);
+      openNewEvent(start, { title: seedTitle ?? "" });
+    } else if (newIntent === "ahead") {
+      const start = addDays(startOfDay(now), 14);
+      start.setHours(9, 0, 0, 0);
+      openNewEvent(start, { title: seedTitle ?? "", allDay: true });
+    }
+    navigate({ to: "/calendar", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newIntent, calendars.length]);
+
+  // For a recurring occurrence, the editable/deletable row is the underlying series (base).
+  function toDraft(ev: EventRow): EventDraft {
     const base = ev.recurring && ev.base_id ? (recurringById[ev.base_id] ?? ev) : ev;
-    setEventDialog({
-      open: true,
-      draft: {
-        id: base.id,
-        calendar_id: base.calendar_id,
-        title: base.title,
-        description: base.description ?? "",
-        location: base.location ?? "",
-        start_at: base.start_at,
-        end_at: base.end_at,
-        all_day: base.all_day,
-        color: base.color,
-        reminder_minutes: base.reminder_minutes ?? null,
-        recurrence: (base.recurrence ?? "none") as EventDraft["recurrence"],
-        recurrence_until: base.recurrence_until ?? null,
-        recurrence_exdates: base.recurrence_exdates ?? [],
-        occurrence_date: ev.occurrence_date ?? null,
-      },
-    });
+    return {
+      id: base.id,
+      calendar_id: base.calendar_id,
+      title: base.title,
+      description: base.description ?? "",
+      location: base.location ?? "",
+      start_at: base.start_at,
+      end_at: base.end_at,
+      all_day: base.all_day,
+      color: base.color,
+      reminder_minutes: base.reminder_minutes ?? null,
+      recurrence: (base.recurrence ?? "none") as EventDraft["recurrence"],
+      recurrence_until: base.recurrence_until ?? null,
+      recurrence_exdates: base.recurrence_exdates ?? [],
+      occurrence_date: ev.occurrence_date ?? null,
+    };
+  }
+
+  function openEditEvent(ev: EventRow) {
+    setEventDialog({ open: true, draft: toDraft(ev) });
   }
 
   const [saving, setSaving] = useState(false);
@@ -333,13 +406,6 @@ function AppPage() {
     toast.success("Event moved");
   }
 
-  async function signOut() {
-    await qc.cancelQueries();
-    qc.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
-  }
-
   // navigation
   function shift(dir: -1 | 1) {
     const a = new Date(anchor);
@@ -361,18 +427,17 @@ function AppPage() {
   }, [view, anchor]);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="border-b bg-card/80 backdrop-blur sticky top-0 z-30">
-        <div className="px-3 sm:px-5 h-14 flex items-center gap-2">
+    <AppFrame
+      userId={user.id}
+      fullBleed
+      header={
+        <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur-lg">
+        <div className="flex h-14 items-center gap-2 px-3 sm:px-5">
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSidebarOpen(true)} aria-label="Menu">
             <Menu className="h-5 w-5" />
           </Button>
-          <Link to="/app" className="hidden md:flex items-center gap-2 mr-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <CalendarIcon className="h-4 w-4" />
-            </span>
-            <span className="font-display text-lg font-semibold">Hearth</span>
+          <Link to="/today" className="flex md:hidden items-center mr-2" aria-label="Hearth — today">
+            <Wordmark size="sm" />
           </Link>
 
           <div className="hidden sm:flex items-center gap-1">
@@ -403,28 +468,13 @@ function AppPage() {
             <Plus className="h-4 w-4" /><span className="hidden sm:inline">New event</span>
           </Button>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="ml-1" aria-label="Account">
-                {profileQ.data && <UserAvatar profile={profileQ.data} size="md" />}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>{profileQ.data?.full_name || profileQ.data?.email}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {notifPerm !== "unsupported" && notifPerm !== "granted" && (
-                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); enableNotifications(); }}>
-                  <Bell className="h-4 w-4 mr-2" />Enable reminders
-                </DropdownMenuItem>
-              )}
-              {notifPerm === "granted" && (
-                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground flex items-center gap-2">
-                  <Bell className="h-3.5 w-3.5" />Reminders on
-                </DropdownMenuLabel>
-              )}
-              <DropdownMenuItem onSelect={signOut}><LogOut className="h-4 w-4 mr-2" />Sign out</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {notifPerm !== "unsupported" && notifPerm !== "granted" && (
+            <Button variant="ghost" size="icon" onClick={enableNotifications} aria-label="Enable reminders">
+              <Bell className="h-4 w-4" />
+            </Button>
+          )}
+
+          <ProfileMenu userId={user.id} />
         </div>
 
         {/* sub-header: view tabs + mobile date nav */}
@@ -445,7 +495,7 @@ function AppPage() {
           </Tabs>
           {allMembersQ.data && allMembersQ.data.length > 1 && (
             <div className="ml-auto hidden sm:flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Shared with</span>
+              <span className="text-xs text-muted-foreground">Your people</span>
               <AvatarStack profiles={allMembersQ.data} max={4} size="sm" />
             </div>
           )}
@@ -457,8 +507,9 @@ function AppPage() {
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search events" className="pl-8 h-9" />
           </div>
         </div>
-      </header>
-
+        </header>
+      }
+    >
       <div className="flex flex-1 min-h-0">
         {/* Sidebar - desktop */}
         <aside className="hidden md:flex w-64 flex-col border-r bg-sidebar p-4 gap-4 overflow-y-auto">
@@ -488,19 +539,26 @@ function AppPage() {
 
         {/* Main */}
         <main className="flex-1 min-w-0 p-3 sm:p-4 overflow-hidden">
-          <div className="h-[calc(100vh-9.5rem)] sm:h-[calc(100vh-7.5rem)]">
+          <div className="h-full">
             {calendars.length === 0 ? (
-              <div className="h-full flex items-center justify-center">
-                <p className="text-muted-foreground">Setting up your calendar…</p>
+              <div className="h-full flex items-center justify-center text-center px-6">
+                <div className="max-w-sm space-y-3">
+                  <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-xl bg-hearth-muted text-hearth animate-breathe">
+                    <CalendarIcon className="h-6 w-6" />
+                  </div>
+                  <h2 className="font-display text-2xl font-semibold">Making a warm little corner for you…</h2>
+                  <p className="text-muted-foreground leading-relaxed">This is the start of your story together. In a moment you can add the first thing you're looking forward to.</p>
+                </div>
               </div>
             ) : (
               <CalendarView
                 view={view}
                 anchor={anchor}
                 events={displayEvents}
-                profilesById={profilesById}
+                profilesById={profilesForView}
                 calendarColorById={calendarColorById}
-                onEventClick={openEditEvent}
+                attendanceByEvent={attendanceByEvent}
+                onEventClick={setSelected}
                 onSlotClick={openNewEvent}
                 onEventMove={moveEvent}
               />
@@ -518,6 +576,10 @@ function AppPage() {
           onSave={saveEvent}
           onDelete={eventDialog.draft.id ? (scope) => deleteEvent(eventDialog.draft, scope) : undefined}
           saving={saving}
+          members={allMembersQ.data}
+          attendance={eventDialog.draft.id ? attendanceByEvent[eventDialog.draft.id] : undefined}
+          currentUserId={user.id}
+          onRsvp={eventDialog.draft.id ? (status) => setRsvp(eventDialog.draft.id!, status) : undefined}
         />
       )}
 
@@ -534,7 +596,25 @@ function AppPage() {
       )}
 
       <CreateCalendarDialog open={createCalOpen} onOpenChange={setCreateCalOpen} userId={user.id} />
-    </div>
+
+      {/* Event detail — a right-side panel, not a modal */}
+      <Sheet open={!!selected} onOpenChange={(v) => !v && setSelected(null)}>
+        <SheetContent side="right" className="w-full p-6 sm:max-w-md">
+          {selected && (
+            <EventDetail
+              event={selected}
+              calendarColor={calendarColorById[selected.calendar_id] || EVENT_COLORS[0]}
+              members={allMembersQ.data}
+              attendance={attendanceByEvent[selected.base_id ?? selected.id]}
+              currentUserId={user.id}
+              onRsvp={(status) => setRsvp(selected.base_id ?? selected.id, status)}
+              onEdit={() => { openEditEvent(selected); setSelected(null); }}
+              onDelete={(scope) => { deleteEvent(toDraft(selected), scope); setSelected(null); }}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+    </AppFrame>
   );
 }
 
@@ -555,11 +635,8 @@ function SidebarContent({
   }
   return (
     <>
-      <Link to="/app" className="flex md:hidden items-center gap-2 mb-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <CalendarIcon className="h-4 w-4" />
-        </span>
-        <span className="font-display text-lg font-semibold">Hearth</span>
+      <Link to="/today" className="flex md:hidden items-center mb-2" aria-label="Hearth — today">
+        <Wordmark size="sm" />
       </Link>
       <div className="flex items-center justify-between">
         <h2 className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Calendars</h2>

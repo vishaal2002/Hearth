@@ -5,10 +5,28 @@ export function initialsFromName(name?: string | null, email?: string | null) {
   return base.slice(0, 2).toUpperCase();
 }
 
+// "Last Light" — earthy, desaturated emotional accents. Each one means
+// something (joy, love, calm, adventure, memory, home) rather than being a
+// generic rainbow. This is the single biggest "handcrafted vs. template" tell.
 export const EVENT_COLORS = [
-  "#f97316", "#ef4444", "#eab308", "#22c55e",
-  "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899",
+  "#FF7A45", // Ember — warmth, the everyday
+  "#F4B740", // Marigold — joy, celebration
+  "#E86A8C", // Rose — love, anniversaries
+  "#7BA890", // Sage — calm, reflection
+  "#6FA8DC", // Sky — adventure, travel
+  "#9B7EDE", // Dusk — memory, nostalgia
+  "#C97B5A", // Clay — grounding, home
+  "#5BAE9C", // Teal — togetherness
 ];
+
+/**
+ * Make a free-text search term safe to drop into a PostgREST `.or()` filter.
+ * Characters like , ( ) * % _ \ and " have meaning in the filter grammar and
+ * would otherwise let a stray keystroke break — or alter — the query.
+ */
+export function sanitizeSearchTerm(raw: string) {
+  return raw.replace(/[,()*%_\\"']/g, " ").trim();
+}
 
 export function fmtTime(d: Date) {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -145,6 +163,11 @@ export function expandRecurring<T extends RecurringBase & { id: string }>(
     occ = advanceOccurrence(occ, freq);
   }
   return out;
+}
+
+/** Anniversaries & birthdays — yearly all-day events get special treatment. */
+export function isMilestoneEvent(ev: { all_day?: boolean; recurrence?: string | null }) {
+  return !!ev.all_day && (ev.recurrence ?? "none") === "yearly";
 }
 
 export function matchesSearch(

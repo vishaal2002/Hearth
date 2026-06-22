@@ -17,10 +17,10 @@ function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
+        <h1 className="font-display text-7xl font-semibold text-foreground">404</h1>
+        <h2 className="mt-4 font-display text-xl font-semibold text-foreground">This page wandered off</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+          We couldn't find what you were looking for — but home is just a tap away.
         </p>
         <div className="mt-6">
           <Link
@@ -45,11 +45,11 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+        <h1 className="font-display text-xl font-semibold tracking-tight text-foreground">
+          Something didn't quite load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+          That's on us, not you. Give it another try, or head back home.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
@@ -78,10 +78,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Hearth — Shared calendars for the people you love" },
-      { name: "description", content: "Plan together. A warm, shared calendar for families, teams, and friends — with day, 3-day, week and month views." },
-      { property: "og:title", content: "Hearth — Shared Calendar" },
-      { property: "og:description", content: "Plan together. A warm, shared calendar for families, teams, and friends." },
+      { title: "Hearth — a shared calendar for the people you love" },
+      { name: "description", content: "Plan your days together, look forward to what's next, and keep the moments worth remembering — a warm shared calendar for couples, families, and close friends." },
+      { property: "og:title", content: "Hearth — a shared calendar for the people you love" },
+      { property: "og:description", content: "Plan your days together and keep the moments worth remembering — a warm shared calendar for the people you love." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -89,7 +89,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" },
+      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" },
     ],
   }),
   shellComponent: RootShell,
@@ -102,6 +102,12 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script
+          // Apply the saved theme before first paint so Evening mode never flashes.
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('warm-theme');if(t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
+          }}
+        />
         <HeadContent />
       </head>
       <body>

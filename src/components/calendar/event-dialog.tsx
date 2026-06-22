@@ -8,10 +8,26 @@ import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useEffect, useState } from "react";
 import { toLocalInput, fromLocalInput, EVENT_COLORS, RECURRENCE_OPTIONS, type Recurrence } from "@/lib/calendar-utils";
-import { Trash2, Loader2, MapPin, Repeat, ChevronDown } from "lucide-react";
+import { Trash2, Loader2, MapPin, Repeat, ChevronDown, Check, HelpCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UserAvatar, type ProfileLike } from "./user-avatar";
 
 export type DeleteScope = "one" | "all";
+
+export type AttendanceStatus = "going" | "maybe" | "declined";
+
+const STATUS_OPTIONS: { key: AttendanceStatus; label: string; icon: typeof Check; activeClass: string }[] = [
+  { key: "going", label: "Going", icon: Check, activeClass: "bg-primary text-primary-foreground" },
+  { key: "maybe", label: "Maybe", icon: HelpCircle, activeClass: "bg-accent text-accent-foreground ring-1 ring-primary/30" },
+  { key: "declined", label: "Can't", icon: X, activeClass: "bg-muted text-foreground ring-1 ring-border" },
+];
+
+function statusLabel(s?: AttendanceStatus) {
+  if (s === "going") return "Going";
+  if (s === "maybe") return "Maybe";
+  if (s === "declined") return "Can't make it";
+  return "No reply";
+}
 
 export type EventDraft = {
   id?: string;
@@ -41,6 +57,10 @@ export function EventDialog({
   onDelete,
   saving,
   canEdit = true,
+  members,
+  attendance,
+  currentUserId,
+  onRsvp,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -50,6 +70,10 @@ export function EventDialog({
   onDelete?: (scope: DeleteScope) => void;
   saving?: boolean;
   canEdit?: boolean;
+  members?: ProfileLike[];
+  attendance?: Record<string, AttendanceStatus>;
+  currentUserId?: string;
+  onRsvp?: (status: AttendanceStatus) => void;
 }) {
   const [draft, setDraft] = useState<EventDraft>(initial);
   useEffect(() => setDraft(initial), [initial, open]);
@@ -58,12 +82,18 @@ export function EventDialog({
   const isRecurring = draft.recurrence !== "none";
   const isExistingRecurring = !!initial.id && initial.recurrence !== "none";
 
+  const showRsvp = !!initial.id && !!onRsvp && !!members && members.length > 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display">{initial.id ? "Edit event" : "New event"}</DialogTitle>
         </DialogHeader>
+
+        {showRsvp && (
+          <RsvpControl members={members} attendance={attendance} currentUserId={currentUserId} onRsvp={onRsvp} />
+        )}
 
         <div className="space-y-4">
           <div>
@@ -247,5 +277,57 @@ export function EventDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function RsvpControl({
+  members,
+  attendance,
+  currentUserId,
+  onRsvp,
+}: {
+  members: ProfileLike[];
+  attendance?: Record<string, AttendanceStatus>;
+  currentUserId?: string;
+  onRsvp: (status: AttendanceStatus) => void;
+}) {
+  const myStatus = currentUserId ? attendance?.[currentUserId] : undefined;
+  return (
+    <div className="rounded-2xl bg-secondary/40 p-3.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Who&apos;s coming</div>
+      <div className="mt-2.5 flex gap-1.5">
+        {STATUS_OPTIONS.map((o) => {
+          const Icon = o.icon;
+          const active = myStatus === o.key;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => onRsvp(o.key)}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-sm font-medium transition-colors",
+                active ? o.activeClass : "bg-card text-muted-foreground hover:bg-accent/50",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />{o.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 space-y-1.5">
+        {members.map((m) => {
+          const st = attendance?.[m.id];
+          return (
+            <div key={m.id} className="flex items-center gap-2">
+              <UserAvatar profile={m} size="xs" />
+              <span className="flex-1 truncate text-sm">{m.id === currentUserId ? "You" : (m.full_name || m.email)}</span>
+              <span className={cn("text-xs", st === "going" ? "font-medium text-primary" : "text-muted-foreground")}>
+                {statusLabel(st)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
