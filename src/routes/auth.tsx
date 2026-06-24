@@ -11,6 +11,9 @@ import { z } from "zod";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — Hearth" }] }),
+  validateSearch: (search: Record<string, unknown>): { unconfirmed?: boolean } => ({
+    unconfirmed: search.unconfirmed === true || search.unconfirmed === "true",
+  }),
   component: AuthPage,
 });
 
@@ -20,6 +23,7 @@ const nameSchema = z.string().trim().min(1, "Required").max(80);
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { unconfirmed } = Route.useSearch();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,6 +36,12 @@ function AuthPage() {
       if (data.session) navigate({ to: "/today" });
     });
   }, [navigate]);
+
+  useEffect(() => {
+    if (unconfirmed) {
+      toast.error("Please confirm your email first — check your inbox for the link.");
+    }
+  }, [unconfirmed]);
 
   async function handleEmail(e: React.FormEvent) {
     e.preventDefault();
@@ -46,7 +56,7 @@ function AuthPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -55,8 +65,23 @@ function AuthPage() {
           },
         });
         if (error) throw error;
-        toast.success("Welcome! Check your email to confirm.");
-        navigate({ to: "/today" });
+        // Supabase hides "email already registered" to prevent enumeration by
+        // returning a user with no identities and no session. Treat that as a
+        // sign-in prompt instead of a misleading success.
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          toast.error("That email already has an account. Try signing in.");
+          setMode("signin");
+          return;
+        }
+        if (data.session) {
+          // Email confirmation is disabled — the user is already signed in.
+          navigate({ to: "/today" });
+        } else {
+          // Confirmation required: no session yet. Don't route into the app (the
+          // auth guard would bounce them straight back here). Wait for the link.
+          toast.success("Almost there — check your email to confirm your account.");
+          setMode("signin");
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
