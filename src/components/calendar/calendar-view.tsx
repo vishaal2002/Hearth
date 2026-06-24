@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDays, eventsOnDay, fmtTime, isSameDay, startOfDay, startOfMonth, startOfWeek } from "@/lib/calendar-utils";
-import { UserAvatar, type ProfileLike } from "./user-avatar";
+import { addDays, eventsOnDay, fmtTime, isMilestoneEvent, isSameDay, startOfDay, startOfMonth, startOfWeek } from "@/lib/calendar-utils";
+import { UserAvatar, AvatarStack, type ProfileLike } from "./user-avatar";
 import { cn } from "@/lib/utils";
-import { Repeat } from "lucide-react";
+import { Repeat, Sparkles } from "lucide-react";
 
 export type EventRow = {
   id: string;
@@ -31,10 +31,25 @@ type Props = {
   events: EventRow[];
   profilesById: Record<string, ProfileLike>;
   calendarColorById: Record<string, string>;
+  /** base event id -> { userId: status } */
+  attendanceByEvent?: Record<string, Record<string, string>>;
   onEventClick: (e: EventRow) => void;
   onSlotClick: (start: Date) => void;
   onEventMove?: (e: EventRow, newStart: Date) => void;
 };
+
+function goingProfiles(
+  ev: EventRow,
+  attendanceByEvent: Record<string, Record<string, string>> | undefined,
+  profilesById: Record<string, ProfileLike>,
+): ProfileLike[] {
+  const map = attendanceByEvent?.[ev.base_id ?? ev.id];
+  if (!map) return [];
+  return Object.entries(map)
+    .filter(([, s]) => s === "going")
+    .map(([uid]) => profilesById[uid])
+    .filter(Boolean);
+}
 
 const HOUR_HEIGHT = 56; // px
 
@@ -110,7 +125,7 @@ function TimeGridView({ view, anchor, events, profilesById, calendarColorById, o
   }, [dragging, days.length, onEventMove]);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-card">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border bg-card shadow-warm">
       {/* Day header */}
       <div className="flex border-b bg-card sticky top-0 z-10">
         <div className="w-14 shrink-0" />
@@ -122,8 +137,8 @@ function TimeGridView({ view, anchor, events, profilesById, calendarColorById, o
                 {d.toLocaleDateString([], { weekday: "short" })}
               </div>
               <div className={cn(
-                "mx-auto mt-0.5 inline-flex h-7 min-w-7 px-1.5 items-center justify-center rounded-full text-sm font-semibold",
-                today && "bg-primary text-primary-foreground"
+                "mx-auto mt-0.5 inline-flex h-7 min-w-7 px-1.5 items-center justify-center rounded-full text-sm font-semibold transition",
+                today && "bg-gradient-to-b from-primary to-primary-deep text-primary-foreground animate-breathe"
               )}>
                 {d.getDate()}
               </div>
@@ -236,7 +251,7 @@ function EventChip({ ev, profile, color, onClick, compact, draggable, onDragStar
       className={cn("w-full flex items-center gap-1 rounded px-1.5 text-left text-[10.5px] hover:brightness-95", compact ? "py-0.5" : "py-1", draggable && "cursor-grab active:cursor-grabbing")}
       style={{ background: color + "22", borderLeft: `3px solid ${color}` }}
     >
-      {isRecurringEvent(ev) && <Repeat className="h-2.5 w-2.5 shrink-0 opacity-70" />}
+      {isMilestoneEvent(ev) ? <Sparkles className="h-2.5 w-2.5 shrink-0 text-primary" /> : isRecurringEvent(ev) && <Repeat className="h-2.5 w-2.5 shrink-0 opacity-70" />}
       <span className="font-semibold truncate flex-1 text-foreground">{ev.title}</span>
       {profile && <UserAvatar profile={profile} size="xs" />}
     </button>
@@ -267,7 +282,7 @@ function MonthView({ anchor, events, profilesById, calendarColorById, onEventCli
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-card">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border bg-card shadow-warm">
       <div className="grid grid-cols-7 border-b bg-card text-center text-[11px] uppercase tracking-wider text-muted-foreground">
         {weekdays.map((d) => (<div key={d} className="py-2">{d}</div>))}
       </div>
@@ -290,7 +305,7 @@ function MonthView({ anchor, events, profilesById, calendarColorById, onEventCli
               <div className="flex justify-end">
                 <span className={cn(
                   "inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-full text-[12px] font-semibold",
-                  today && "bg-primary text-primary-foreground"
+                  today && "bg-gradient-to-b from-primary to-primary-deep text-primary-foreground animate-breathe"
                 )}>{d.getDate()}</span>
               </div>
               <div className="space-y-0.5 overflow-hidden">
@@ -322,7 +337,7 @@ function MonthView({ anchor, events, profilesById, calendarColorById, onEventCli
   );
 }
 
-function AgendaView({ events, profilesById, calendarColorById, onEventClick }: Props) {
+function AgendaView({ events, profilesById, calendarColorById, attendanceByEvent, onEventClick }: Props) {
   const sorted = useMemo(
     () => [...events].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
     [events],
@@ -339,9 +354,9 @@ function AgendaView({ events, profilesById, calendarColorById, onEventClick }: P
   }, [sorted]);
 
   return (
-    <div className="rounded-xl border bg-card overflow-y-auto h-full">
+    <div className="rounded-2xl border bg-card shadow-warm overflow-y-auto h-full">
       {groups.length === 0 ? (
-        <p className="p-8 text-center text-sm text-muted-foreground">No events match.</p>
+        <p className="p-10 text-center text-sm text-muted-foreground">Nothing here yet — a little quiet is nice too. <span className="font-hand text-base text-primary">Add something to look forward to.</span></p>
       ) : (
         groups.map(([key, evs]) => {
           const d = new Date(key);
@@ -354,12 +369,13 @@ function AgendaView({ events, profilesById, calendarColorById, onEventClick }: P
                 {evs.map((ev) => {
                   const color = ev.color || calendarColorById[ev.calendar_id] || "#f97316";
                   const profile = profilesById[ev.created_by];
+                  const going = goingProfiles(ev, attendanceByEvent, profilesById);
                   return (
                     <button key={ev.id} onClick={() => onEventClick(ev)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/40 transition">
                       <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: color }} />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate flex items-center gap-1.5">
-                          {isRecurringEvent(ev) && <Repeat className="h-3 w-3 shrink-0 opacity-70" />}
+                          {isMilestoneEvent(ev) ? <Sparkles className="h-3 w-3 shrink-0 text-primary" /> : isRecurringEvent(ev) && <Repeat className="h-3 w-3 shrink-0 opacity-70" />}
                           <span className="truncate">{ev.title}</span>
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
@@ -367,7 +383,14 @@ function AgendaView({ events, profilesById, calendarColorById, onEventClick }: P
                           {ev.location && ` · ${ev.location}`}
                         </div>
                       </div>
-                      {profile && <UserAvatar profile={profile} size="sm" />}
+                      {going.length > 0 ? (
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          <AvatarStack profiles={going} max={3} size="xs" />
+                          <span className="text-[11px] font-medium text-primary">going</span>
+                        </span>
+                      ) : (
+                        profile && <UserAvatar profile={profile} size="sm" />
+                      )}
                     </button>
                   );
                 })}

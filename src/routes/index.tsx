@@ -2,15 +2,19 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Calendar, Users, Sparkles, Bell, Search, LayoutGrid } from "lucide-react";
+import { Wordmark } from "@/components/wordmark";
+import { FeatureCard3D, LandingHero3D, ScrollReveal3D } from "@/components/landing";
+import {
+  ArrowRight, CalendarDays, CalendarHeart, Heart, Lock, Sparkles,
+} from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Hearth — Shared calendars for the people you love" },
-      { name: "description", content: "A warm, shared calendar for families, teams, and friends. Plan together with day, week, month and agenda views." },
-      { property: "og:title", content: "Hearth — Shared Calendar" },
-      { property: "og:description", content: "Plan together. A warm, shared calendar for families, teams, and friends." },
+      { title: "Hearth — the shared calendar for people you love" },
+      { name: "description", content: "Plan your days together, look forward to what's next, and keep the moments worth remembering." },
+      { property: "og:title", content: "Hearth — the shared calendar for people you love" },
+      { property: "og:description", content: "Plan together. Remember together. A private shared calendar for couples, families, and close friends." },
     ],
   }),
   component: Landing,
@@ -25,70 +29,115 @@ function Landing() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-secondary via-background to-background">
-      <header className="px-5 sm:px-8 py-5 flex items-center justify-between max-w-6xl mx-auto">
-        <Link to="/" className="flex items-center gap-2">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
-            <Calendar className="h-5 w-5" />
-          </span>
-          <span className="font-display text-2xl font-semibold">Hearth</span>
-        </Link>
-        {signedIn ? (
-          <Button onClick={() => navigate({ to: "/app" })}>Open calendar</Button>
-        ) : (
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => navigate({ to: "/auth" })}>Sign in</Button>
-            <Button onClick={() => navigate({ to: "/auth" })}>Get started</Button>
-          </div>
-        )}
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-lg">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
+          <Link to="/"><Wordmark size="md" /></Link>
+          <nav className="flex items-center gap-2">
+            {signedIn ? (
+              <Button onClick={() => navigate({ to: "/today" })}>
+                Open Hearth <ArrowRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => navigate({ to: "/auth" })}>Sign in</Button>
+                <Button onClick={() => navigate({ to: "/auth" })}>Get started</Button>
+              </>
+            )}
+          </nav>
+        </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-5 sm:px-8 pt-12 pb-24">
-        <section className="text-center max-w-3xl mx-auto">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">
-            <Sparkles className="h-3.5 w-3.5" /> Made for plans that involve more than one person
-          </span>
-          <h1 className="font-display text-4xl sm:text-6xl font-semibold tracking-tight mt-5 leading-[1.05]">
-            A warm, shared calendar for the people you love
-          </h1>
-          <p className="mt-5 text-base sm:text-lg text-muted-foreground leading-relaxed">
-            Hearth keeps your family, team, or friend group in sync. Add events, invite people, and see who's doing what — at a glance, with a little face on every plan.
-          </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button size="lg" className="h-12 px-7" onClick={() => navigate({ to: signedIn ? "/app" : "/auth" })}>
-              {signedIn ? "Open your calendar" : "Get started — it's free"}
-            </Button>
-            <Button size="lg" variant="outline" className="h-12 px-7" onClick={() => navigate({ to: "/auth" })}>
-              Sign in
-            </Button>
+      <main>
+        {/* Hero */}
+        <section className="relative overflow-visible">
+          <div className="pointer-events-none absolute inset-0 hearth-gradient" aria-hidden />
+          <div className="relative mx-auto grid max-w-6xl gap-12 px-5 py-16 sm:px-8 lg:grid-cols-2 lg:items-center lg:gap-16 lg:py-24">
+            <div className="animate-hearth-enter">
+              <p className="text-overline text-hearth">Shared calendar · Private by design</p>
+              <h1 className="mt-4 text-display-xl text-foreground">
+                Life together,<br />beautifully organized
+              </h1>
+              <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground">
+                Hearth is where couples, families, and close friends plan ahead, count down to what matters, and keep the moments worth remembering — all in one warm, private place.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Button size="lg" className="h-11 px-6" onClick={() => navigate({ to: signedIn ? "/today" : "/auth" })}>
+                  {signedIn ? "Open your Hearth" : "Start free"}
+                </Button>
+                <Button size="lg" variant="outline" className="h-11 px-6" onClick={() => navigate({ to: "/auth" })}>
+                  Sign in
+                </Button>
+              </div>
+              <p className="mt-4 text-caption">No ads. No feed. Just the people you choose.</p>
+            </div>
+
+            <div className="animate-hearth-enter flex justify-center lg:justify-end" style={{ animationDelay: "0.1s" }}>
+              <LandingHero3D />
+            </div>
           </div>
         </section>
 
-        <section className="mt-20 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Feature icon={<Users />} title="Share with anyone" desc="Invite by email. They join automatically when they sign up, and your plans appear on both calendars instantly." />
-          <Feature icon={<LayoutGrid />} title="Every view you need" desc="Day, 3-day, week, month and agenda — switch with a tap, optimised for desktop and phone." />
-          <Feature icon={<Calendar />} title="Color-coded by person" desc="Each event shows a small avatar of who created it, so you can scan a week and know what's whose." />
-          <Feature icon={<Search />} title="Search across calendars" desc="Find any event by title, place or notes. Across personal and shared calendars at once." />
-          <Feature icon={<Bell />} title="Reminders" desc="Set a heads-up 5 minutes, an hour, or a day before — so nothing slips." />
-          <Feature icon={<Sparkles />} title="Private by default" desc="Email + password or Google sign-in. Only the people you invite can see what's on your calendar." />
+        {/* Features bento */}
+        <section className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
+          <ScrollReveal3D className="mb-12 max-w-2xl">
+            <p className="text-overline">Why Hearth</p>
+            <h2 className="mt-2 text-display text-foreground">
+              A calendar that cares about connection
+            </h2>
+            <p className="mt-3 text-caption leading-relaxed">
+              Most calendars track tasks. Hearth tracks the life you&apos;re building with the people who matter most.
+            </p>
+          </ScrollReveal3D>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <FeatureCard3D
+              icon={<CalendarDays className="h-5 w-5" />}
+              title="One calendar, together"
+              desc="Birthdays, trips, date nights — everyone sees what's coming and adds to it."
+              className="lg:col-span-2"
+            />
+            <FeatureCard3D
+              icon={<Sparkles className="h-5 w-5" />}
+              title="Countdown to joy"
+              desc="Every trip and anniversary gets a countdown, so anticipation is shared."
+            />
+            <FeatureCard3D
+              icon={<Heart className="h-5 w-5" />}
+              title="Moments worth keeping"
+              desc="Daily reflections become a timeline of your life together."
+            />
+            <FeatureCard3D
+              icon={<CalendarHeart className="h-5 w-5" />}
+              title="This day, last year"
+              desc="Hearth quietly resurfaces what you were doing a year ago today."
+              className="lg:col-span-2"
+            />
+            <FeatureCard3D
+              icon={<Lock className="h-5 w-5" />}
+              title="Truly private"
+              desc="Your space, your people. Protected at the database level — no followers, no ads."
+            />
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section className="border-t border-border bg-muted/40">
+          <ScrollReveal3D className="mx-auto max-w-6xl px-5 py-20 text-center sm:px-8">
+            <h2 className="text-display text-foreground">Ready to plan together?</h2>
+            <p className="mx-auto mt-3 max-w-md text-caption">
+              Create your shared space in under a minute. Invite your people when you&apos;re ready.
+            </p>
+            <Button size="lg" className="mt-8 h-11 px-8" onClick={() => navigate({ to: signedIn ? "/today" : "/auth" })}>
+              {signedIn ? "Go to Today" : "Create your Hearth"}
+            </Button>
+          </ScrollReveal3D>
         </section>
       </main>
 
-      <footer className="border-t border-border/50 py-6 text-center text-sm text-muted-foreground">
-        Made with care · Hearth
+      <footer className="border-t border-border py-8 text-center text-caption">
+        Hearth — made for people who care
       </footer>
-    </div>
-  );
-}
-
-function Feature({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
-  return (
-    <div className="rounded-2xl border bg-card p-5 hover:shadow-md hover:-translate-y-0.5 transition-all">
-      <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-primary mb-3">
-        {icon}
-      </div>
-      <h3 className="font-display text-lg font-semibold">{title}</h3>
-      <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{desc}</p>
     </div>
   );
 }
